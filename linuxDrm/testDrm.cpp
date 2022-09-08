@@ -5,6 +5,8 @@
 #include <sys/ioctl.h>
 #include <drm/drm.h>
 #include <drm/drm_mode.h>
+#include <vector>
+std::vector<uint32_t> veci;
 
 int main()
 {
@@ -12,6 +14,7 @@ int main()
 //Opening the DRI device
 //------------------------------------------------------------------------------
 
+    veci.push_back(8);
 	int dri_fd  = open("/dev/dri/card0",O_RDWR | O_CLOEXEC);
 
 //------------------------------------------------------------------------------
