@@ -1,0 +1,5 @@
+[
+  { "directory": "/home/user/llvm/build",
+    "arguments": ["/usr/bin/clang++", "-Irelative", "-Ilibs/glad/include", "-DSOMEDEF=With spaces, quotes and \\-es.", "-c", "-o", "eglCapture", "linuxDrm/eglCapture.cpp"],
+    "file": "linuxDrm/eglCapture.cpp" }
+]
