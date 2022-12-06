@@ -38,6 +38,14 @@ public class ScreenCapService extends Service {
         }
     };
 
+    MediaProjection.Callback projectionCallback = new MediaProjection.Callback() {
+        @Override
+        public void onStop() {
+            super.onStop();
+            Log.i("ScreenCap:", "MediaProjection onStop.");
+        }
+    };
+
     @Nullable
     @Override
     public IBinder onBind(Intent intent) {
@@ -54,6 +62,8 @@ public class ScreenCapService extends Service {
         int resultCode = intent.getIntExtra("resultCode", 0);
         Intent data = intent.getParcelableExtra("data");
         Surface surface = intent.getParcelableExtra("surface");
+        int surfaceWidth = intent.getIntExtra("width", 720);
+        int surfaceHeight = intent.getIntExtra("height", 1280);
         if(mSurface==null)
             mSurface = surface;
         try
@@ -65,8 +75,8 @@ public class ScreenCapService extends Service {
             Log.e("ScreenCap:", "getMediaProjection failed."+ex.toString());
         }
 
-        int w = 1920;
-        int h = 1080;
+        int w = surfaceWidth;
+        int h = surfaceHeight;
 
         virDisplay = mediaProjection.createVirtualDisplay("RECORDER_VIR_DISPLAY_0", w, h, 1,
                 DisplayManager.VIRTUAL_DISPLAY_FLAG_PUBLIC, mSurface, virDisplayCallback, null);
@@ -78,6 +88,17 @@ public class ScreenCapService extends Service {
     @Override
     public void onDestroy() {
         Log.i("ScreenCap:", "ScreenCapService onDestroy");
+        if(virDisplay!=null)
+        {
+            virDisplay.setSurface(null);
+            virDisplay.release();
+            virDisplay = null;
+        }
+        if(mediaProjection!=null){
+            mediaProjection.stop();
+            mediaProjection = null;
+        }
+
         super.onDestroy();
     }
 
