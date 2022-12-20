@@ -4,6 +4,7 @@ import android.annotation.TargetApi;
 import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.graphics.SurfaceTexture;
 import android.hardware.display.DisplayManager;
 import android.hardware.display.VirtualDisplay;
 import android.media.MediaCodec;
@@ -56,6 +57,7 @@ import static android.os.Build.VERSION_CODES.M;
 
 public class MainActivity extends AppCompatActivity {
 
+    private final String TAG = "MainActivity";
     private ActivityMainBinding binding;
     private Button mBtStartCap;
     private Surface mPreviewSurface;
@@ -68,6 +70,7 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        Log.i(TAG, "onCreate");
 
         binding = ActivityMainBinding.inflate(getLayoutInflater());
         setContentView(binding.getRoot());
@@ -84,59 +87,57 @@ public class MainActivity extends AppCompatActivity {
 
         // 实时预览屏幕的SurfaceView
         ScreenCapPreviewer capPreviewer = (ScreenCapPreviewer)findViewById(R.id.surfaceView_screenCapPreview);
-        SurfaceHolder surfaceHolder = capPreviewer.getHolder();
-        surfaceHolder.addCallback(new SurfaceHolder.Callback() {
-            @Override
-            public void surfaceCreated(@NonNull SurfaceHolder holder) {
+        if(capPreviewer!=null) {
+            SurfaceHolder surfaceHolder = capPreviewer.getHolder();
+            surfaceHolder.addCallback(new SurfaceHolder.Callback() {
+                @Override
+                public void surfaceCreated(@NonNull SurfaceHolder holder) {
 
-            }
+                }
 
-            @Override
-            public void surfaceChanged(@NonNull SurfaceHolder holder, int format, int width, int height) {
-                mPreviewSurface = holder.getSurface();
-                mPreviewSurfaceWidth = width;
-                mPreviewSurfaceHeight = height;
-            }
+                @Override
+                public void surfaceChanged(@NonNull SurfaceHolder holder, int format, int width, int height) {
+                    mPreviewSurface = holder.getSurface();
+                    mPreviewSurfaceWidth = width;
+                    mPreviewSurfaceHeight = height;
+                }
 
-            @Override
-            public void surfaceDestroyed(@NonNull SurfaceHolder holder) {
-            }
-        });
+                @Override
+                public void surfaceDestroyed(@NonNull SurfaceHolder holder) {
+                }
+            });
+        }
 
         // 开始录制按键
         mBtStartCap = (Button)findViewById(R.id.btStartCap);
-        mBtStartCap.setOnClickListener(v -> {
-            if(!mRecorderStarted)
-            {
-                if(hasExternalStoragePermissions()) {
-                    startCapture();
+        if(mBtStartCap!=null) {
+            mBtStartCap.setOnClickListener(v -> {
+                if (!mRecorderStarted) {
+                    if (hasExternalStoragePermissions()) {
+                        startCapture();
+                    } else {
+                        requestPermissions();
+                    }
+                } else {
+                    Log.i("ScreenCap:", "click button to stop recorder");
+                    doStopRecordeCapture();
                 }
-                else {
-                    requestPermissions();
-                }
-            }
-            else
-            {
-                Log.i("ScreenCap:", "click button to stop recorder");
-                doStopRecordeCapture();
-            }
-        });
-
+            });
+        }
 
         // 是否勾选预览CheckBox
         CheckBox cbIsPreview = findViewById(R.id.cbPreview);
-        cbIsPreview.setOnCheckedChangeListener((buttonView, isChecked) -> {
-            mIsPreview = isChecked;
-            if(mIsPreview)
-            {
-                doStopRecordeCapture();
-                startCapture();
-            }
-            else
-            {
-                stopCapture();
-            }
-        });
+        if(cbIsPreview!=null) {
+            cbIsPreview.setOnCheckedChangeListener((buttonView, isChecked) -> {
+                mIsPreview = isChecked;
+                if (mIsPreview) {
+                    doStopRecordeCapture();
+                    startCapture();
+                } else {
+                    stopCapture();
+                }
+            });
+        }
     }
 
     void doStopRecordeCapture()
