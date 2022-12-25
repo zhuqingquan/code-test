@@ -6,6 +6,7 @@ import java.nio.FloatBuffer;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import android.graphics.Bitmap;
+import android.graphics.SurfaceTexture;
 import android.opengl.GLES11Ext;
 import android.opengl.GLES20;
 import android.opengl.GLUtils;
@@ -41,19 +42,20 @@ public class RectSpirit2d extends DrawableElem {
 
 	private static final int SIZEOF_FLOAT = 4;
 
-//	private static final float FULL_RECTANGLE_COORDS[] = {
-//			-1.0f, -1.0f, // 0 bottom left
-//			1.0f, -1.0f, // 1 bottom right
-//			-1.0f, 1.0f, // 2 top left
-//			1.0f, 1.0f, // 3 top right
-//	};
-
 	private static final float FULL_RECTANGLE_COORDS[] = {
-			-0.5f, -0.5f, // 0 bottom left
-			0.5f, -0.5f, // 1 bottom right
-			-0.5f, 0.5f, // 2 top left
-			0.5f, 0.5f, // 3 top right
+			-1.0f, -1.0f, // 0 bottom left
+			1.0f, -1.0f, // 1 bottom right
+			-1.0f, 1.0f, // 2 top left
+			1.0f, 1.0f, // 3 top right
 	};
+
+	private float mX = -1.0f, mY = -1.0f, mWidth=2.0f, mHeight=2.0f;
+//	private static final float FULL_RECTANGLE_COORDS[] = {
+//			-0.5f, -0.5f, // 0 bottom left
+//			0.5f, -0.5f, // 1 bottom right
+//			-0.5f, 0.5f, // 2 top left
+//			0.5f, 0.5f, // 3 top right
+//	};
 
 	private Callback mCallback;
 	private Texture2dProgram mProgram;
@@ -111,6 +113,16 @@ public class RectSpirit2d extends DrawableElem {
 		mTexCoordArray = ByteBuffer.allocateDirect(rotatedTex.length * 4)
 				.order(ByteOrder.nativeOrder()).asFloatBuffer();
 		mTexCoordArray.put(rotatedTex).position(0);
+	}
+
+	public void move(float x, float y, float width, float height) {
+		float Cur_RECTANGLE_COORDS[] = {
+				x, y-height, // 0 bottom left
+				x+width, y-height, // 1 bottom right
+				x, y, // 2 top left
+				x+width, y, // 3 top right
+		};
+		mVertexArray =GlUtil.createFloatBuffer(Cur_RECTANGLE_COORDS);
 	}
 
 	public void adjustTexture(int imageWidth, int imageHeight, int ow, int oh,
@@ -237,6 +249,11 @@ public class RectSpirit2d extends DrawableElem {
 		mIsSourceUpdated.set(true);
 	}
 
+	private SurfaceTexture mSurfaceTextureNeedUpdate = null;
+	public void notifyTextureFrameAvailable(SurfaceTexture sftexture) {
+		mSurfaceTextureNeedUpdate = sftexture;
+	}
+
 	public Texture2dProgram getProgram() {
 		return mProgram;
 	}
@@ -271,6 +288,11 @@ public class RectSpirit2d extends DrawableElem {
 				if(mCallback!=null)
 					mCallback.onTextureUpdated(mSourceTextureId);
 			}
+		}
+		if(mSurfaceTextureNeedUpdate!=null) {
+			mSurfaceTextureNeedUpdate.updateTexImage();
+			texMatrix = new float[16];
+			mSurfaceTextureNeedUpdate.getTransformMatrix(texMatrix);
 		}
 		mProgram.draw(GlUtil.IDENTITY_MATRIX, mVertexArray, 0, mVertexCount,
 				mCoordsPerVertex, mVertexStride, texMatrix, mTexCoordArray,

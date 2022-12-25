@@ -5,6 +5,7 @@ import android.graphics.BitmapFactory;
 import android.graphics.SurfaceTexture;
 import android.opengl.EGL14;
 import android.opengl.EGLSurface;
+import android.opengl.GLES11Ext;
 import android.opengl.GLES20;
 import android.os.Build;
 import android.os.Handler;
@@ -321,6 +322,66 @@ public class GLRender {
         }
     }
 
+    static public abstract class CreateTextureResultCallback {
+        public abstract  void onCreateResult(boolean isSuccess, int textureId);
+    };
+
+    static public class TextureParams {
+        public int width;
+        public int height;
+        public int format;
+        public CreateTextureResultCallback resultCallback;
+
+        public TextureParams(int w, int h, int fmt, CreateTextureResultCallback callback) {
+            width = w;
+            height = h;
+            format = fmt;
+            resultCallback = callback;
+        }
+    }
+    /**
+     * 创建一个可用于外部使用的Texture，比如可用于摄像头采集画面等。
+     * 创建的结果通过callback回调给调用者
+     * @param callback 回调创建的TextureId
+     * @return true--调用成功  false--调用失败，此GLRender未初始化
+     */
+    public boolean createTexture(TextureParams params) {
+        if(mRenderState.get()==RENDER_STATE_UNINIT) {
+            Log.e(TAG, "createTexture failed. RENDER_STATE==UNINIT");
+            return false;
+        }
+
+        mRenderThreadHandler.sendMessage(mRenderThreadHandler.obtainMessage(RenderThreadHandler.MSG_CREATE_TEXTURE, params));
+        return true;
+    }
+
+    public void releaseTexture(int textureId) {
+        mRenderThreadHandler.sendMessage(mRenderThreadHandler.obtainMessage(RenderThreadHandler.MSG_RELEASE_TEXTURE, textureId, -1));
+    }
+
+    public void onTextureFrameAvailable(SurfaceTexture sf) {
+        mRenderThreadHandler.sendMessage(mRenderThreadHandler.obtainMessage(RenderThreadHandler.MSG_TEXTURE_FRAME_AVAILABLE, sf));
+    }
+
+    private void doTextureOnFrameAvailable(SurfaceTexture sf) {
+        if(sf!=null) {
+            sf.updateTexImage();
+        }
+    }
+
+    void doCreateTexture(int width, int height, int format, CreateTextureResultCallback callback) {
+        int texId = GlUtil.createTextureObject(GLES11Ext.GL_TEXTURE_EXTERNAL_OES);
+        if(callback!=null) {
+            callback.onCreateResult(texId!=0, texId);
+        }
+    }
+
+    void doReleaseTexture(int textureId) {
+        int[] texs = new int[1];
+        texs[0] = textureId;
+        GLES20.glDeleteTextures(1, texs, 0);
+    }
+
     // TODO 改成invalidate可能准确点？？？
     public void drawFrame()
     {
@@ -338,12 +399,12 @@ public class GLRender {
 
     void draw(int backcolor)
     {
-        mRenderThreadHandler.postDelayed(new Runnable() {
-            @Override
-            public void run() {
-                mRenderThreadHandler.sendMessage(mRenderThreadHandler.obtainMessage(RenderThreadHandler.MSG_DRAW));
-            }
-        }, 1000);
+//        mRenderThreadHandler.postDelayed(new Runnable() {
+//            @Override
+//            public void run() {
+//                mRenderThreadHandler.sendMessage(mRenderThreadHandler.obtainMessage(RenderThreadHandler.MSG_DRAW));
+//            }
+//        }, 1000);
 
         // EGL context未初始化或者RenderTarget未创建时进行渲染操作
         if(mEGL==null || (mWindowSurface==null && mOffscreenSurface==null))
@@ -379,9 +440,9 @@ public class GLRender {
         if (!result) {
             Log.d(TAG, "WARNING: swapBuffers() failed");
         }
-
-        backcolor_g += 0.1;
-        if(backcolor_g>1.0) backcolor_g = 0.0f;
+//
+//        backcolor_g += 0.1;
+//        if(backcolor_g>1.0) backcolor_g = 0.0f;
     }
 
     private  class RenderThread extends HandlerThread
@@ -419,7 +480,9 @@ public class GLRender {
         public static final int MSG_RESIZE_TARGET = 4;
         public static final int MSG_ADD_ELEM = 5;
         public static final int MSG_REMOVE_ELEM = 6;
-        public static final int MSG_SET_PARM = 7;
+        public static final int MSG_CREATE_TEXTURE = 7;
+        public static final int MSG_RELEASE_TEXTURE = 8;
+        public static final int MSG_TEXTURE_FRAME_AVAILABLE = 9;
 
         private WeakReference<RenderThread> mWeakRenderThread;
         private WeakReference<GLRender> mWeakRefGLRender;
@@ -464,6 +527,16 @@ public class GLRender {
                     break;
                 case MSG_REMOVE_ELEM:
                     glRender.doRemoveElem((DrawableElem) msg.obj);
+                    break;
+                case MSG_CREATE_TEXTURE:
+                    TextureParams params = (TextureParams) msg.obj;
+                    glRender.doCreateTexture(params.width, params.height, params.format, params.resultCallback);
+                    break;
+                case MSG_RELEASE_TEXTURE:
+                    glRender.doReleaseTexture(msg.arg1);
+                    break;
+                case MSG_TEXTURE_FRAME_AVAILABLE:
+                    glRender.doTextureOnFrameAvailable((SurfaceTexture)msg.obj);
                     break;
                 default:
                     break;

@@ -113,6 +113,11 @@ public class GlUtil {
 		}
 	}
 
+	/**
+	 * 创建Texture对象，返回Texture Id
+	 * @param textureTarget Texture Target的类型，可以为GLES20.GL_TEXTURE_2D或者GLES11Ext.GL_TEXTURE_EXTERNAL_OES
+	 * @return 返回创建的Texture对象的Id
+	 */
 	public static int createTextureObject(int textureTarget) {
 		int[] textures = new int[1];
 		GLES20.glGenTextures(1, textures, 0);
@@ -124,12 +129,9 @@ public class GlUtil {
 
 		//GLES11Ext.GL_TEXTURE_EXTERNAL_OES
 		GLES20.glTexParameterf(textureTarget, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR);
-		GLES20.glTexParameterf(textureTarget,
-				GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR);
-		GLES20.glTexParameteri(textureTarget,
-				GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE);
-		GLES20.glTexParameteri(textureTarget,
-				GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE);
+		GLES20.glTexParameterf(textureTarget, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR);
+		GLES20.glTexParameteri(textureTarget, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE);
+		GLES20.glTexParameteri(textureTarget, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE);
 		GlUtil.checkGlError("glTexParameter");
 
 		return texId;

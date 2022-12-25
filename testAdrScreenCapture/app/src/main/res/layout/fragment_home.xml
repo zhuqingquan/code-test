@@ -27,5 +27,12 @@
             android:layout_height="wrap_content"
             android:text="预览"
             android:textColor="#E91E63" />
+
+        <CheckBox
+            android:id="@+id/cbPreviewCam"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="摄像头"
+            android:textColor="#E91E63" />
     </LinearLayout>
 </androidx.constraintlayout.widget.ConstraintLayout>
