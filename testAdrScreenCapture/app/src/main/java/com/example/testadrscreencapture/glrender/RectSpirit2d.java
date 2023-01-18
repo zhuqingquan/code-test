@@ -22,8 +22,8 @@ import android.util.Log;
 public class RectSpirit2d extends DrawableElem {
 
 	public static interface Callback {
-		void onTextureCreated(int textureId);
-		void onTextureUpdated(int textureId);
+		void onTextureCreated(TextureHolder texture);
+		void onTextureUpdated(TextureHolder texture);
 		void onTextureDestroyed();
 	}
 
@@ -76,7 +76,7 @@ public class RectSpirit2d extends DrawableElem {
 	private int mCoordsPerVertex;
 	private int mVertexStride;
 	private int mTexCoordStride;
-	private int mSourceTextureId;		// 需要显示的Texture的ID
+	private TextureHolder mSourceTextureId;		// 需要显示的Texture的ID
 	private Bitmap mSourceImage;		// Texture的数据源
 	private AtomicBoolean mIsSourceUpdated = new AtomicBoolean(false);	// 标记是否mSourceImage更新了
 
@@ -113,6 +113,7 @@ public class RectSpirit2d extends DrawableElem {
 		mTexCoordArray = ByteBuffer.allocateDirect(rotatedTex.length * 4)
 				.order(ByteOrder.nativeOrder()).asFloatBuffer();
 		mTexCoordArray.put(rotatedTex).position(0);
+		setNeedRedraw(true);
 	}
 
 	public void move(float x, float y, float width, float height) {
@@ -123,6 +124,7 @@ public class RectSpirit2d extends DrawableElem {
 				x+width, y, // 3 top right
 		};
 		mVertexArray =GlUtil.createFloatBuffer(Cur_RECTANGLE_COORDS);
+		setNeedRedraw(true);
 	}
 
 	public void adjustTexture(int imageWidth, int imageHeight, int ow, int oh,
@@ -171,6 +173,7 @@ public class RectSpirit2d extends DrawableElem {
 
 		mTexCoordArray.clear();
 		mTexCoordArray.put(textureCords).position(0);
+		setNeedRedraw(true);
 	}
 
 	public void adjustVertex(int imageWidth, int imageHeight, int ow, int oh) {
@@ -204,7 +207,8 @@ public class RectSpirit2d extends DrawableElem {
 		mVertexArray = ByteBuffer.allocateDirect(vCords.length * 4)
 				.order(ByteOrder.nativeOrder()).asFloatBuffer();
 		mVertexArray.put(vCords).position(0);
-		
+
+		setNeedRedraw(true);
 	}
 
 	private float addVDistance(float coordinate, float distance) {
@@ -227,8 +231,10 @@ public class RectSpirit2d extends DrawableElem {
 	 * 直接设置TextureId作为Shader中的Texture
 	 * @param textureId
 	 */
-	public void setSourceTexture(int textureId)
+	public void setSourceTexture(TextureHolder textureId)
 	{
+		if(mSourceTextureId!=textureId)
+			setNeedRedraw(true);
 		mSourceTextureId = textureId;
 	}
 
@@ -236,7 +242,7 @@ public class RectSpirit2d extends DrawableElem {
 	 * 获取Texture的ID
 	 * @return 此RECT渲染的Texture的ID
 	 */
-	public int getSourceTextureId() {
+	public TextureHolder getSourceTextureId() {
 		return mSourceTextureId;
 	}
 
@@ -247,11 +253,18 @@ public class RectSpirit2d extends DrawableElem {
 	public void setSourceImage(Bitmap bitmap) {
 		mSourceImage = bitmap;
 		mIsSourceUpdated.set(true);
+		setNeedRedraw(true);
 	}
 
 	private SurfaceTexture mSurfaceTextureNeedUpdate = null;
 	public void notifyTextureFrameAvailable(SurfaceTexture sftexture) {
 		mSurfaceTextureNeedUpdate = sftexture;
+		setNeedRedraw(true);
+	}
+
+	public void notifySourceTextureUpdated(TextureHolder sourceTexture) {
+		if(sourceTexture==mSourceTextureId)
+			setNeedRedraw(true);
 	}
 
 	public Texture2dProgram getProgram() {
@@ -262,9 +275,12 @@ public class RectSpirit2d extends DrawableElem {
 		if(mProgram==null) {
 			mProgram = new Texture2dProgram(mProgramType);
 		}
-		if(mSourceTextureId==0)
+		if(mSourceTextureId==null)
 		{
-			mSourceTextureId = GlUtil.createTextureObject(GLES20.GL_TEXTURE_2D);
+			int textureId = GlUtil.createTextureObject(GLES20.GL_TEXTURE_2D);
+			if(textureId>0) {
+				mSourceTextureId = new TextureHolder(null, textureId);
+			}
 			if(mCallback!=null)
 				mCallback.onTextureCreated(mSourceTextureId);
 		}
@@ -272,23 +288,29 @@ public class RectSpirit2d extends DrawableElem {
 		{
 			Bitmap bitmap = mSourceImage;
 			mIsSourceUpdated.set(false);
-			if(bitmap==null && mSourceTextureId!=0)
+			if(bitmap==null && mSourceTextureId!=null)
 			{
-				int[] texs = new int[1];
-				texs[0] = mSourceTextureId;
-				GLES20.glDeleteTextures(1, texs, 0);
-				mSourceTextureId = 0;
+				int tex = mSourceTextureId.lock();
+				//int[] texs = new int[1];
+				//texs[0] = mSourceTextureId;
+				GLES20.glDeleteTextures(1, new int[] {tex}, 0);
+				//mSourceTextureId = 0;
+				mSourceTextureId.onTextureReleased();
+				mSourceTextureId = null;
 				if(mCallback!=null)
 					mCallback.onTextureDestroyed();
 			}
 			//mSourceTextureId = GlUtil.createImageTexture(bitmap);
-			if(mSourceTextureId!=0) {
-				GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, mSourceTextureId);
+			if(mSourceTextureId!=null) {
+				int texId = mSourceTextureId.lock();
+				GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, texId);
 				GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, bitmap, 0);
+				mSourceTextureId.unlock();
 				if(mCallback!=null)
 					mCallback.onTextureUpdated(mSourceTextureId);
 			}
 		}
+		int tex = mSourceTextureId.lock();
 		if(mSurfaceTextureNeedUpdate!=null) {
 			mSurfaceTextureNeedUpdate.updateTexImage();
 			texMatrix = new float[16];
@@ -296,7 +318,9 @@ public class RectSpirit2d extends DrawableElem {
 		}
 		mProgram.draw(GlUtil.IDENTITY_MATRIX, mVertexArray, 0, mVertexCount,
 				mCoordsPerVertex, mVertexStride, texMatrix, mTexCoordArray,
-				mSourceTextureId, mTexCoordStride);
+				tex, mTexCoordStride);
+		mSourceTextureId.unlock();
+		setNeedRedraw(false);
 	}
 
 	public class Texture2dProgram {
@@ -342,6 +366,7 @@ public class RectSpirit2d extends DrawableElem {
 
 		private int maPositionLoc;
 		private int maTextureCoordLoc;
+		private int msTextureLoc;
 
 		private int mTextureTarget;
 
@@ -382,6 +407,8 @@ public class RectSpirit2d extends DrawableElem {
 			muTexMatrixLoc = GLES20.glGetUniformLocation(mProgramHandle,
 					"uTexMatrix");
 			GlUtil.checkLocation(muTexMatrixLoc, "uTexMatrix");
+			msTextureLoc = GLES20.glGetUniformLocation(mProgramHandle, "sTexture");
+			GlUtil.checkLocation(muTexMatrixLoc, "sTexture");
 		}
 
 		public void release() {
@@ -403,6 +430,8 @@ public class RectSpirit2d extends DrawableElem {
 			// Set the texture.
 			GLES20.glActiveTexture(GLES20.GL_TEXTURE0);
 			GLES20.glBindTexture(mTextureTarget, textureId);
+			GlUtil.checkGlError("glBindTexture");
+			GLES20.glUniform1i(msTextureLoc, 0);
 
 			// Copy the model / view / projection matrix over.
 			GLES20.glUniformMatrix4fv(muMVPMatrixLoc, 1, false, mvpMatrix, 0);
@@ -434,6 +463,7 @@ public class RectSpirit2d extends DrawableElem {
 			GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, firstVertex,
 					vertexCount);
 			GlUtil.checkGlError("glDrawArrays");
+			//Log.v(TAG, "draw texture id="+textureId+" TextureTarget="+mTextureTarget);
 
 			// Done -- disable vertex array, texture, and program.
 			GLES20.glDisableVertexAttribArray(maPositionLoc);

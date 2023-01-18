@@ -5,11 +5,19 @@ import android.opengl.GLES11Ext;
 import android.opengl.GLES20;
 import android.opengl.GLUtils;
 import android.opengl.Matrix;
+import android.os.Environment;
 import android.util.Log;
 
+import java.io.File;
+import java.io.FileOutputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Locale;
+
+import static android.opengl.GLES20.GL_UNSIGNED_BYTE;
 
 //import android.opengl.GLES30;
 
@@ -236,4 +244,37 @@ public class GlUtil {
 			}
 		}
 	}*/
+
+	/**
+	 * 将当前FBO或者RenderTarget中的内容拷贝出来并保存为JPEG
+	 * @param dir 保存文件的路径
+	 * @param fileName 文件名
+	 * @param width 宽
+	 * @param height 高
+	 */
+	public static void dumpCurrentFBOToJPEG(File dir, String fileName, int width, int height) {
+		byte[] pixelDatas = new byte[width * height * 4];
+		ByteBuffer buffer = ByteBuffer.wrap(pixelDatas);
+		GLES20.glReadPixels(0, 0, width, height, GLES20.GL_RGBA, GL_UNSIGNED_BYTE, buffer);
+
+		try {
+			Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+			bitmap.copyPixelsFromBuffer(buffer);
+			if (dir.exists() || dir.mkdirs()) {
+				final File file = new File(dir, fileName);
+				Log.v(TAG, "Dump FrameBuffer texture to jpeg.FileName="+file.getAbsolutePath());
+				FileOutputStream outputStream = new FileOutputStream(file);
+				bitmap.compress(Bitmap.CompressFormat.JPEG, 100, outputStream);
+				outputStream.flush();
+				outputStream.close();
+			}
+		} catch (Exception ex) {
+			ex.printStackTrace();
+		}
+
+		// printf 64 byte content in log in the picture middle line
+//            int pos = width * 4 * height / 2;
+//            byte[] subLine = Arrays.copyOfRange(pixelDatas, pos, pos + 64);
+//            Log.v(TAG, "bytes in "+pos+": "+ Arrays.toString(subLine));
+	}
 }

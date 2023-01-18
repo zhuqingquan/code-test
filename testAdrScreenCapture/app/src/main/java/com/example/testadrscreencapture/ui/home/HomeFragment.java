@@ -8,7 +8,6 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
-import android.graphics.PixelFormat;
 import android.graphics.SurfaceTexture;
 import android.hardware.display.DisplayManager;
 import android.hardware.display.VirtualDisplay;
@@ -31,7 +30,6 @@ import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.CheckBox;
-import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -43,13 +41,12 @@ import androidx.lifecycle.Observer;
 import androidx.lifecycle.ViewModelProvider;
 
 import com.example.testadrscreencapture.CameraUtils;
-import com.example.testadrscreencapture.R;
 import com.example.testadrscreencapture.ScreenCapService;
 import com.example.testadrscreencapture.databinding.FragmentHomeBinding;
 import com.example.testadrscreencapture.glrender.GLRender;
 import com.example.testadrscreencapture.glrender.RectSpirit2d;
+import com.example.testadrscreencapture.glrender.TextureHolder;
 import com.example.testadrscreencapture.ui.ScreenCapPreviewer;
-import com.example.testadrscreencapture.ui.dashboard.EGLSurfaceView;
 import com.example.testadrscreencapture.vencoder.VideoEncodeConfig;
 import com.example.testadrscreencapture.vencoder.VideoEncoder;
 
@@ -144,13 +141,13 @@ public class HomeFragment extends Fragment {
             mBtStartCap.setOnClickListener(v -> {
                 if (!mRecorderStarted) {
                     if (hasExternalStoragePermissions()) {
-                        startCapture();
+                        startEncoder();
                     } else {
                         requestPermissions();
                     }
                 } else {
                     Log.i("ScreenCap:", "click button to stop recorder");
-                    doStopRecordeCapture();
+                    stopEncoder();
                 }
             });
         }
@@ -161,7 +158,6 @@ public class HomeFragment extends Fragment {
             cbIsPreview.setOnCheckedChangeListener((buttonView, isChecked) -> {
                 mIsPreview = isChecked;
                 if (mIsPreview) {
-                    doStopRecordeCapture();
                     startCapture();
                 } else {
                     stopCapture();
@@ -190,8 +186,8 @@ public class HomeFragment extends Fragment {
     @Override
     public void onPause() {
         super.onPause();
-        if(mRender!=null)
-            mRender.pause();
+        if(mMixerRender !=null)
+            mMixerRender.pause();
         Log.i(TAG, "onPause");
     }
 
@@ -204,8 +200,8 @@ public class HomeFragment extends Fragment {
     @Override
     public void onResume() {
         super.onResume();
-        if(mRender!=null)
-            mRender.resume();
+        if(mMixerRender !=null)
+            mMixerRender.resume();
         Log.i(TAG, "onResume");
     }
 
@@ -213,7 +209,7 @@ public class HomeFragment extends Fragment {
         @Override
         public void surfaceCreated(@NonNull SurfaceHolder holder) {
             mPreviewSurface = holder.getSurface();
-            initVideoRender(mPreviewSurface);
+            initVideoRender();
         }
 
         @Override
@@ -222,17 +218,16 @@ public class HomeFragment extends Fragment {
             mPreviewSurfaceWidth = width;
             mPreviewSurfaceHeight = height;
             Log.i(TAG, "surfaceChanged surface="+holder.getSurface().toString());
-            if(mRender!=null) {
-                mRender.resizeTarget(holder.getSurface(), width, height);
-                //mRender.drawFrame();
+            if(mRenderPreview !=null) {
+                mRenderPreview.resizeTarget(holder.getSurface(), width, height);
             }
         }
 
         @Override
         public void surfaceDestroyed(@NonNull SurfaceHolder holder) {
             Log.i(TAG, "surfaceDestroyed surface="+holder.getSurface().toString());
-            if(mRender!=null) {
-                mRender.resizeTarget(null, 0, 0);
+            if(mRenderPreview !=null) {
+                mRenderPreview.resizeTarget(null, 0, 0);
             }
         }
 
@@ -250,14 +245,6 @@ public class HomeFragment extends Fragment {
 //        }
 
     };
-
-    void doStopRecordeCapture()
-    {
-        stopCapture();
-        releaseEncoder();
-        //releaseMuxer();
-        mBtStartCap.setText("开始录制");
-    }
 
     ///////////////////////////摄像头预览///////////////////////////////////////////////////////
     private boolean checkCameraHardware(Context context)
@@ -310,12 +297,39 @@ public class HomeFragment extends Fragment {
         //开启预览
         CameraUtils.startPreview();
     }
-    //////////////////////////////////gl render////////////////////////////////////////////////
-    private GLRender mRender = null;
-    private GLRender.Callback mRenderCallback = new GLRender.Callback() {
+    //////////////////////////////////gl render for mixer////////////////////////////////////////////////
+    private GLRender mMixerRender = null;
+
+    private void initVideoRender()
+    {
+        if(mMixerRender ==null)
+        {
+            Log.i(TAG, "initVideoRender");
+            mMixerRender = new GLRender();
+            mMixerRender.setCallback(mMixerRenderCallback);
+            mMixerRender.init();
+        }
+    }
+
+    private void deinitVideoRender()
+    {
+        if(mMixerRender !=null)
+        {
+            Log.i(TAG, "deinitVideoRender");
+            mMixerRender.deinit();
+            mMixerRender = null;
+        }
+    }
+
+    private GLRender.Callback mMixerRenderCallback = new GLRender.Callback() {
         @Override
         public void onInitResult(boolean isSuccess) {
-            Log.i(TAG, "onInitResult isSuccess="+isSuccess);
+            Log.i(TAG, "MixerRender onInitResult isSuccess="+isSuccess);
+            if(!isSuccess)
+                return;
+            mMixerRender.resizeTarget(null, 720, 1280);
+            mMixerRender.setBackground(0.0f, 0.0f, 0.0f, 1.0f);
+            //mMixerRender.setDrawCountMax(1);
             createRectForScreenCap();
             createSurfaceTextureAndRectForCamera();
         }
@@ -325,33 +339,119 @@ public class HomeFragment extends Fragment {
             Log.i(TAG, "onDeinit");
         }
 
+        @Override
+        public void onRenderTargetCreated(Object eglContext, int FBO, int textureId) {
+            createGLRenderForPreview();
+        }
+
+        @Override
+        public void onRenderTargetDestroyed() {
+            releaseGLRenderForPreview();
+        }
+
+        @Override
+        public void onRenderTargetFrameAvailable(int FBO, TextureHolder textureId) {
+            super.onRenderTargetFrameAvailable(FBO, textureId);
+            // 混画的GLRender渲染之后，需要通知使用预览以及编码的GLRender对象进行渲染
+            if(mRectPreviewFBO!=null)
+                mRectPreviewFBO.notifySourceTextureUpdated(textureId);
+            if(mRectEncoderFBO!=null)
+                mRectEncoderFBO.notifySourceTextureUpdated(textureId);
+        }
     };
 
-    private void initVideoRender(Surface surface)
-    {
-        if(mRender==null)
+    ////////////////////// GLRender for preview ////////////////////////////////////////////////////
+    private GLRender mRenderPreview = null;
+    RectSpirit2d mRectPreviewFBO = null;
+    private void createGLRenderForPreview() {
+        if(mRenderPreview ==null)
         {
-            Log.i(TAG, "initVideoRender");
-            mRender = new GLRender();
-            mRender.setCallback(mRenderCallback);
-            mRender.init();
+            Log.i(TAG, "initVideoRender for preview");
+            mRenderPreview = mMixerRender.createSharedGLRender();
+            mRenderPreview.setCallback(mRenderCallbackPreview);
+            mRenderPreview.init();
+            //mRenderPreview.setDrawCountMax(1);
         }
     }
 
-    private void deinitVideoRender()
-    {
-        if(mRender!=null)
-        {
-            Log.i(TAG, "deinitVideoRender");
-            mRender.deinit();
-            mRender = null;
+    private void releaseGLRenderForPreview() {
+        if(mRectPreviewFBO!=null && mRenderPreview!=null) {
+            mRenderPreview.removeElem(mRectPreviewFBO);
+            mRectPreviewFBO = null;
+        }
+        if(mRenderPreview!=null) {
+            Log.i(TAG, "deinit VideoRender for preview");
+            mRenderPreview.deinit();
+            mRenderPreview = null;
         }
     }
+
+    private GLRender.Callback mRenderCallbackPreview = new GLRender.Callback() {
+        @Override
+        public void onInitResult(boolean isSuccess) {
+            Log.i(TAG, "Preview render onInitResult isSuccess="+isSuccess);
+            if(mPreviewSurface!=null) {
+                mRenderPreview.resizeTarget(mPreviewSurface, mPreviewSurfaceWidth, mPreviewSurfaceHeight);
+            }
+            mRenderPreview.setBackground(0.0f, 0.5f, 0.0f, 1.0f);       // 设置个偏绿色的背景，这样渲染有问题时比较容易察觉
+            mRectPreviewFBO = createRectForMixerFBO(mRenderPreview, mMixerRender.getRenderTargetTexture());
+        }
+
+        @Override
+        public void onDeinit() {
+            Log.i(TAG, "onDeinit");
+        }
+
+    };
+
+    ////////////////////// GLRender for encoder ////////////////////////////////////////////////////
+    private GLRender mRenderEncoder = null;
+    RectSpirit2d mRectEncoderFBO = null;
+    private void createGLRenderForEncoder() {
+        if(mRenderEncoder ==null)
+        {
+            Log.i(TAG, "initVideoRender encoder");
+            mRenderEncoder = mMixerRender.createSharedGLRender();
+            mRenderEncoder.setCallback(mRenderCallbackEncoder);
+            mRenderEncoder.init();
+        }
+    }
+
+    private void releaseGLRenderForEncoder() {
+        if(mRectEncoderFBO!=null) {
+            mRenderEncoder.removeElem(mRectEncoderFBO);
+            mRectEncoderFBO = null;
+        }
+        if(mRenderEncoder!=null) {
+            Log.i(TAG, "deinit VideoRender for encoder");
+            mRenderEncoder.deinit();
+            mRenderEncoder = null;
+        }
+    }
+
+    private GLRender.Callback mRenderCallbackEncoder = new GLRender.Callback() {
+        @Override
+        public void onInitResult(boolean isSuccess) {
+            Log.i(TAG, "Encoder render onInitResult isSuccess="+isSuccess);
+            if(mEncoderInputSurface!=null) {
+                mRenderEncoder.resizeTarget(mEncoderInputSurface, mEncoder.getConfig().width, mEncoder.getConfig().height);
+            }
+            mRenderEncoder.setBackground(0.0f, 0.0f, 0.3f, 1.0f);
+            // 使用MediaCodec的InputSurface作为GLRender对像的RenderTarget
+            mRectEncoderFBO = createRectForMixerFBO(mRenderEncoder, mMixerRender.getRenderTargetTexture());
+        }
+
+        @Override
+        public void onDeinit() {
+            Log.i(TAG, "onDeinit");
+        }
+
+    };
 
     // 一段写死的测试代码，在画面中显示一张图片
     void addRectTestShowPicture()
     {
-        if(mRender==null)
+        if(mMixerRender ==null)
             return;
         try {
             String state = Environment.getExternalStorageState();
@@ -363,7 +463,7 @@ public class HomeFragment extends Fragment {
                 RectSpirit2d rect = new RectSpirit2d(RectSpirit2d.ProgramType.TEXTURE_2D);
                 rect.setTextRotation(0, false, true);
                 rect.setSourceImage(bitmap);
-                mRender.addElem(rect);
+                mMixerRender.addElem(rect);
             }
         } catch (IOException e) {
             e.printStackTrace();
@@ -374,34 +474,34 @@ public class HomeFragment extends Fragment {
     RectSpirit2d mRectScreenCapPreview = null;
     void createRectForScreenCap()
     {
-        if(mRender==null)
+        if(mMixerRender ==null)
             return;
-        mRender.createTexture(new GLRender.TextureParams(720, 1280, GLES20.GL_RGBA, new GLRender.CreateTextureResultCallback() {
+        mMixerRender.createTexture(new GLRender.TextureParams(720, 1280, GLES20.GL_RGBA, new GLRender.CreateTextureResultCallback() {
             @Override
-            public void onCreateResult(boolean isSuccess, int textureId) {
+            public void onCreateResult(boolean isSuccess, TextureHolder textureId) {
                 Log.i(TAG, "Texture for preview screen capture is created.isSucess="+ isSuccess+" TextureId="+textureId);
-                if(textureId!=0 && isSuccess) {
-                    SurfaceTexture st = new SurfaceTexture(textureId);
+                if(textureId!=null && isSuccess) {
+                    SurfaceTexture st = new SurfaceTexture(textureId.getTexture());
                     st.setDefaultBufferSize(720, 1280);
                     st.setOnFrameAvailableListener(new SurfaceTexture.OnFrameAvailableListener() {
                         @Override
                         public void onFrameAvailable(SurfaceTexture surfaceTexture) {
                             mRectScreenCapPreview.notifyTextureFrameAvailable(surfaceTexture);
-                            mRender.drawFrame();
+                            //mMixerRender.drawFrame();
                         }
                     });
                     Surface sf = new Surface(st);
                     mScreenCapPreviewSurfaceTexture = st;
-                    mPreviewSurface = sf;
-                    mPreviewSurfaceWidth = 720;
-                    mPreviewSurfaceHeight = 1280;
+                    mCapSurface = sf;
+                    mCapSurfaceWidth = 720;
+                    mCapSurfaceHeight = 1280;
 
                     //RectSpirit2d rect = new RectSpirit2d(RectSpirit2d.ProgramType.TEXTURE_2D);
                     RectSpirit2d rect = new RectSpirit2d(RectSpirit2d.ProgramType.TEXTURE_EXT);
                     rect.setTextRotation(0, false, true);
                     rect.setSourceTexture(textureId);
                     rect.move(-1.0f, 0.5f, 1.0f, 1.0f);
-                    mRender.addElem(rect);
+                    mMixerRender.addElem(rect);
                     mRectScreenCapPreview = rect;
                 }
             }
@@ -415,20 +515,20 @@ public class HomeFragment extends Fragment {
     int mPreviewSurfaceCameraHeight = 0;
     void createSurfaceTextureAndRectForCamera()
     {
-        if(mRender==null)
+        if(mMixerRender ==null)
             return;
-        mRender.createTexture(new GLRender.TextureParams(720, 1280, GLES20.GL_RGBA, new GLRender.CreateTextureResultCallback() {
+        mMixerRender.createTexture(new GLRender.TextureParams(720, 1280, GLES20.GL_RGBA, new GLRender.CreateTextureResultCallback() {
             @Override
-            public void onCreateResult(boolean isSuccess, int textureId) {
+            public void onCreateResult(boolean isSuccess, TextureHolder textureId) {
                 Log.i(TAG, "Texture for preview screen capture is created.isSucess="+ isSuccess+" TextureId="+textureId);
-                if(textureId!=0 && isSuccess) {
-                    SurfaceTexture st = new SurfaceTexture(textureId);
+                if(textureId!=null && isSuccess) {
+                    SurfaceTexture st = new SurfaceTexture(textureId.getTexture());
                     st.setDefaultBufferSize(720, 1280);
                     st.setOnFrameAvailableListener(new SurfaceTexture.OnFrameAvailableListener() {
                         @Override
                         public void onFrameAvailable(SurfaceTexture surfaceTexture) {
                             mRectCameraPreview.notifyTextureFrameAvailable(surfaceTexture);
-                            mRender.drawFrame();
+                            //mMixerRender.drawFrame();
                         }
                     });
                     Surface sf = new Surface(st);
@@ -442,12 +542,25 @@ public class HomeFragment extends Fragment {
                     rect.setTextRotation(0, false, true);
                     rect.setSourceTexture(textureId);
                     rect.move(-0.0f, 0.5f, 1.0f, 1.0f);
-                    mRender.addElem(rect);
+                    mMixerRender.addElem(rect);
                     mRectCameraPreview = rect;
                 }
             }
         }));
     }
+
+    RectSpirit2d createRectForMixerFBO(GLRender glrender, TextureHolder textureId)
+    {
+        //RectSpirit2d rect = new RectSpirit2d(RectSpirit2d.ProgramType.TEXTURE_EXT);
+        RectSpirit2d rect = new RectSpirit2d(RectSpirit2d.ProgramType.TEXTURE_2D);
+        rect.setTextRotation(0, false, true);
+        rect.setSourceTexture(textureId);
+        //rect.move(-1.0f, 0.5f, 1.0f, 1.0f);
+        glrender.addElem(rect);
+        //mRectScreenCapPreview = rect;
+        return rect;
+    }
+
     ///////////////////// 请求授权录制写入文件以及音频录制 ///////////////////////////////////////////
     private static final int REQUEST_PERMISSIONS = 2;
     private static final String rec_audio_request_msg = "using_your_mic_to_record_audio";
@@ -482,9 +595,9 @@ public class HomeFragment extends Fragment {
                 granted |= r;
             }
             if (granted == PackageManager.PERMISSION_GRANTED) {
-                startCapture();
+                startEncoder();
             } else {
-                //toast(getString(R.string.no_permission));
+                Log.e(TAG, "Encoder and recorder not start. NO_PERMISSION for write file");
             }
         }
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
@@ -532,33 +645,10 @@ public class HomeFragment extends Fragment {
         Log.i("ScreenCap:", "request to Stop MediaProjection service.");
     }
 
-    private void initCapSurface(){
-        if(mIsPreview)
-        {
-            mCapSurface = mPreviewSurface;
-            mCapSurfaceWidth = mPreviewSurfaceWidth;
-            mCapSurfaceHeight = mPreviewSurfaceHeight;
-        }
-        else
-        {
-            if(mEncoder!=null) {
-                mCapSurface = mEncoder.getInputSurface();// 此处获取MediaCodec.createInputSurface返回的Surface，并传给ScreenCapService用于创建VirtualDisplay
-                mCapSurfaceWidth = mEncoder.getConfig().width;
-                mCapSurfaceHeight = mEncoder.getConfig().height;
-            }
-        }
-    }
-
     public void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         if(requestCode==RECORD_REQUEST_CODE && resultCode==RESULT_OK)
         {
-            if(!mIsPreview)
-            {
-                // 在需要使用编码器MediaCodec对象中的Surface设置到VirtualDisplay时，需要先创建编码器
-                createVideoEncoder();
-            }
-            initCapSurface();
             if(Build.VERSION.SDK_INT>=Build.VERSION_CODES.O)
             {
                 Log.i("ScreenCap:", "start ScreenCapService.");
@@ -580,17 +670,13 @@ public class HomeFragment extends Fragment {
                 virDisplay = mediaProjection.createVirtualDisplay("RECORDER_VIR_DISPLAY_0", w, h, 1,
                         DisplayManager.VIRTUAL_DISPLAY_FLAG_PUBLIC, mCapSurface, virDisplayCallback, null);
             }
-            if(!mIsPreview)
-            {
-                mRecorderStarted = true;
-                mBtStartCap.setText("停止录屏");
-            }
         }
     }
 
 
     //////////////////////////////////////////VideoEncoder///////////////////////////////////////
     VideoEncoder mEncoder;
+    Surface mEncoderInputSurface;
     VideoEncoder.Callback mEncoderCallback = new VideoEncoder.Callback() {
         public void onEncodedDataAvailable(int index, MediaCodec.BufferInfo info, ByteBuffer buffer)
         {
@@ -616,6 +702,8 @@ public class HomeFragment extends Fragment {
 
         public void onEncodedDataFormatChanged(MediaFormat format)
         {
+            if(!mRecorderStarted)
+                return;
             releaseMuxer();
             createMuxer(format, null);
         }
@@ -650,6 +738,27 @@ public class HomeFragment extends Fragment {
             mEncoder.stop();
             mEncoder = null;
         }
+    }
+
+    void startEncoder() {
+        Log.i(TAG, "startEncoder");
+        createVideoEncoder();
+        if(mEncoder!=null) {
+            mEncoderInputSurface = mEncoder.getInputSurface();// 此处获取MediaCodec.createInputSurface返回的Surface，并传给ScreenCapService用于创建VirtualDisplay
+        }
+        createGLRenderForEncoder();
+        mRecorderStarted = true;
+        mBtStartCap.setText("停止录屏");
+    }
+
+    void stopEncoder() {
+        Log.i(TAG, "stopEncoder");
+        mRecorderStarted = false;
+        releaseGLRenderForEncoder();
+        releaseEncoder();
+        //releaseMuxer();
+
+        mBtStartCap.setText("开始录制");
     }
 
     ///////////////////MediaMuxer///////////////////////////////
@@ -731,7 +840,5 @@ public class HomeFragment extends Fragment {
         int granted = pm.checkPermission(WRITE_EXTERNAL_STORAGE, packageName);
         return granted == PackageManager.PERMISSION_GRANTED;
     }
-
-
 
 }

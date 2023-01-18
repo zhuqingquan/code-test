@@ -113,6 +113,14 @@ import android.view.Surface;
 	}
 
 	/**
+	 * Get current EGLContext
+	 * @return EGLContext obj
+	 */
+	public EGLContext getContext() {
+		return mEGLContext;
+	}
+
+	/**
 	 * Finds a suitable EGLConfig.
 	 *
 	 * @param flags Bit flags from constructor.
@@ -128,6 +136,7 @@ import android.view.Surface;
 		// doesn't really help.  It can also lead to a huge performance hit on glReadPixels()
 		// when reading into a GL_RGBA buffer.
 		int[] attribList = {
+				EGL14.EGL_SURFACE_TYPE, EGL14.EGL_PBUFFER_BIT | EGL14.EGL_WINDOW_BIT,
 				EGL14.EGL_RED_SIZE, 8,
 				EGL14.EGL_GREEN_SIZE, 8,
 				EGL14.EGL_BLUE_SIZE, 8,
